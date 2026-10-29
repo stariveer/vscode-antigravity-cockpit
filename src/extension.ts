@@ -481,8 +481,15 @@ async function handleConfigChange(config: CockpitConfig): Promise<void> {
     const currentQuotaSource = config.quotaSource === 'authorized' ? 'authorized' : 'local';
     const quotaSourceChanged = currentQuotaSource !== lastQuotaSource;
     if (quotaSourceChanged) {
-        logger.info(`Quota source changed: ${lastQuotaSource} -> ${currentQuotaSource}, skipping reprocess`);
+        logger.info(`Quota source changed: ${lastQuotaSource} -> ${currentQuotaSource}, syncing telemetry`);
         lastQuotaSource = currentQuotaSource;
+        if (currentQuotaSource === 'local' && !reactor.hasLocalConnection()) {
+            systemOnline = false;
+            await bootSystems();
+            return;
+        }
+        void reactor.syncTelemetry();
+        return;
     }
 
     // 仅当刷新间隔变化时重启 Reactor
@@ -521,6 +528,10 @@ async function bootSystems(): Promise<void> {
                 if (info) {
                     reactor.engage(info.connectPort, info.csrfToken, hunter.getLastDiagnostics());
                     logger.info('Local Antigravity connection detected in authorized mode');
+                    void reactor.syncTelemetry();
+                    if (accountsRefreshService) {
+                        void accountsRefreshService.refreshQuotas();
+                    }
                 }
             })
             .catch(err => {

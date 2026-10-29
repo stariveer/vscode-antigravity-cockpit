@@ -18,8 +18,8 @@ export class WindowsStrategy implements PlatformStrategy {
      * 3. 必须有 --app_data_dir antigravity 参数
      */
     private isAntigravityProcess(commandLine: string): boolean {
-        // 条件1：必须包含 --extension_server_port 参数
-        if (!commandLine.includes('--extension_server_port')) {
+        // 条件1：必须包含 --extension_server_port 或 --hub-port 参数
+        if (!commandLine.includes('--extension_server_port') && !commandLine.includes('--hub-port')) {
             return false;
         }
 
@@ -28,8 +28,8 @@ export class WindowsStrategy implements PlatformStrategy {
             return false;
         }
 
-        // 条件3：必须有 --app_data_dir antigravity 参数（最可靠的标识）
-        return /--app_data_dir\s+antigravity\b/i.test(commandLine);
+        // 条件3：必须有 --app_data_dir antigravity 参数（兼容空格或等号）
+        return /--app_data_dir[=\s]+antigravity\b/i.test(commandLine);
     }
 
     /**
@@ -40,7 +40,7 @@ export class WindowsStrategy implements PlatformStrategy {
         const utf8Header = '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ';
         // 使用单引号包裹 Filter 参数，内部 name 值使用双单引号转义
         // chcp 65001 >nul 确保 CMD 环境以 UTF-8 运行，避免乱码
-        return `chcp 65001 >nul && powershell -NoProfile -Command "${utf8Header}Get-CimInstance Win32_Process -Filter 'name=''${processName}''' | Select-Object ProcessId,CommandLine | ConvertTo-Json"`;
+        return `chcp 65001 >nul && powershell -NoProfile -Command "${utf8Header}Get-CimInstance Win32_Process -Filter 'name=''${processName}'' OR name=''agy.exe''' | Select-Object ProcessId,CommandLine | ConvertTo-Json"`;
     }
 
     /**
@@ -92,7 +92,7 @@ export class WindowsStrategy implements PlatformStrategy {
                 const pid = item.ProcessId;
                 if (!pid) { continue; }
 
-                const portMatch = commandLine.match(/--extension_server_port[=\s]+(\d+)/);
+                const portMatch = commandLine.match(/--(?:extension_server_port|hub-port)[=\s]+(\d+)/);
                 const tokenMatch = commandLine.match(/--csrf_token[=\s]+([a-f0-9-]+)/i);
 
                 if (!tokenMatch?.[1]) {
@@ -217,8 +217,8 @@ export class UnixStrategy implements PlatformStrategy {
      * 3. 必须有 --app_data_dir antigravity 参数
      */
     private isAntigravityProcess(commandLine: string): boolean {
-        // 条件1：必须包含 --extension_server_port 参数
-        if (!commandLine.includes('--extension_server_port')) {
+        // 条件1：必须包含 --extension_server_port 或 --hub-port 参数
+        if (!commandLine.includes('--extension_server_port') && !commandLine.includes('--hub-port')) {
             return false;
         }
 
@@ -227,8 +227,8 @@ export class UnixStrategy implements PlatformStrategy {
             return false;
         }
 
-        // 条件3：必须有 --app_data_dir antigravity 参数（最可靠的标识）
-        return /--app_data_dir\s+antigravity\b/i.test(commandLine);
+        // 条件3：必须有 --app_data_dir antigravity 参数（兼容空格或等号）
+        return /--app_data_dir[=\s]+antigravity\b/i.test(commandLine);
     }
 
     getProcessListCommand(processName: string): string {
@@ -236,7 +236,7 @@ export class UnixStrategy implements PlatformStrategy {
         // -ww: 无限宽度
         // -eo: 自定义输出格式
         // pid,ppid,args: 进程ID、父进程ID、完整命令行
-        return `ps -ww -eo pid,ppid,args | grep "${processName}" | grep -v grep`;
+        return `ps -ww -eo pid,ppid,args | grep -E "${processName}|agy" | grep -v grep`;
     }
 
     parseProcessInfo(stdout: string): ProcessInfo[] {
@@ -263,7 +263,7 @@ export class UnixStrategy implements PlatformStrategy {
                 continue;
             }
 
-            const portMatch = cmd.match(/--extension_server_port[=\s]+(\d+)/);
+            const portMatch = cmd.match(/--(?:extension_server_port|hub-port)[=\s]+(\d+)/);
             const tokenMatch = cmd.match(/--csrf_token[=\s]+([a-zA-Z0-9-]+)/i);
 
             // 必须同时满足：有 csrf_token 且是 Antigravity 进程

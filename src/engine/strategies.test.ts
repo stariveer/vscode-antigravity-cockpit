@@ -13,6 +13,11 @@ describe('Process Detection Strategies', () => {
             expect(isAntigravityProcess(cmd)).toBe(true);
         });
 
+        it('should identify a valid agy hub process with equals syntax', () => {
+            const cmd = 'C:\\Path\\to\\agy.exe --hub --hub-port=50308 --csrf_token=abc-123 --app_data_dir=antigravity';
+            expect(isAntigravityProcess(cmd)).toBe(true);
+        });
+
         it('should reject process missing extension_server_port', () => {
             const cmd = 'C:\\Path\\to\\language_server.exe --csrf_token abc-123 --app_data_dir antigravity';
             expect(isAntigravityProcess(cmd)).toBe(false);
@@ -43,6 +48,11 @@ describe('Process Detection Strategies', () => {
 
         it('should handle different space/equals formats', () => {
             const cmd = '/path/to/language_server --extension_server_port 53125 --csrf_token abc-123 --app_data_dir antigravity';
+            expect(isAntigravityProcess(cmd)).toBe(true);
+        });
+
+        it('should identify new agy hub process on Unix', () => {
+            const cmd = '/Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/agy --hub --hub-port=50308 --csrf_token=849059ee-fa4d-4906-ac41-47cdbf962958 --app_data_dir=antigravity';
             expect(isAntigravityProcess(cmd)).toBe(true);
         });
 

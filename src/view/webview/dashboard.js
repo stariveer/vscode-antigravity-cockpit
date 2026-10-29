@@ -137,10 +137,11 @@ import { createAnnouncementModule } from './dashboard_announcements';
     };
 
     const CUSTOM_GROUP_FAMILY_ORDER = {
-        claude: 0,
-        gemini_pro: 1,
-        gemini_flash: 2,
-        gemini_image: 3,
+        gemini_argon: 0,
+        claude: 1,
+        gemini_pro: 2,
+        gemini_flash: 3,
+        gemini_image: 4,
     };
 
     function normalizeGroupMatchText(value) {
@@ -154,6 +155,16 @@ import { createAnnouncementModule } from './dashboard_announcements';
     function resolveGroupFamily(modelId, label) {
         const modelIdLower = (modelId || '').toLowerCase();
         const labelText = normalizeGroupMatchText(label || modelId || '');
+
+        if (
+            /^gemini-\d+(?:\.\d+)?-argon(?:-|$)/.test(modelIdLower)
+            || /^gemini \d+(?:\.\d+)? argon\b/.test(labelText)
+            || modelIdLower === 'model_placeholder_m417'
+            || modelIdLower === 'model_placeholder_m418'
+            || modelIdLower === 'model_placeholder_m419'
+        ) {
+            return 'gemini_argon';
+        }
 
         if (
             /^gemini-\d+(?:\.\d+)?-pro-image(?:-|$)/.test(modelIdLower)
@@ -178,6 +189,9 @@ import { createAnnouncementModule } from './dashboard_announcements';
             /^gemini-\d+(?:\.\d+)?-flash(?:-|$)/.test(modelIdLower)
             || /^gemini \d+(?:\.\d+)? flash\b/.test(labelText)
             || modelIdLower === 'model_placeholder_m18'
+            || modelIdLower === 'model_placeholder_m414'
+            || modelIdLower === 'model_placeholder_m415'
+            || modelIdLower === 'model_placeholder_m416'
         ) {
             return 'gemini_flash';
         }
@@ -189,6 +203,12 @@ import { createAnnouncementModule } from './dashboard_announcements';
             || modelIdLower === 'model_placeholder_m12'
             || modelIdLower === 'model_placeholder_m26'
             || modelIdLower === 'model_placeholder_m35'
+            || modelIdLower === 'model_placeholder_m405'
+            || modelIdLower === 'model_placeholder_m406'
+            || modelIdLower === 'model_placeholder_m408'
+            || modelIdLower === 'model_placeholder_m409'
+            || modelIdLower === 'model_placeholder_m410'
+            || modelIdLower === 'model_placeholder_m411'
             || modelIdLower === 'model_openai_gpt_oss_120b_medium'
         ) {
             return 'claude';
@@ -249,7 +269,7 @@ import { createAnnouncementModule } from './dashboard_announcements';
                 startCooldown(state.refreshCooldown - diff);
             }
         }
-        currentQuotaSource = 'authorized';
+        currentQuotaSource = state.quotaSource || 'authorized';
         updatePlanButtonVisibility();
 
         // isProfileHidden and isDataMasked are now loaded from config in handleMessage
@@ -832,7 +852,7 @@ import { createAnnouncementModule } from './dashboard_announcements';
                 }
                 if (message.config.quotaSource) {
                     if (!isQuotaSourceSwitching || message.config.quotaSource === pendingQuotaSource) {
-                        currentQuotaSource = 'authorized';
+                        currentQuotaSource = message.config.quotaSource;
                         vscode.setState({ ...vscode.getState(), quotaSource: currentQuotaSource });
                     }
                 }

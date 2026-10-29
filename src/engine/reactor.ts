@@ -76,15 +76,25 @@ export interface AccountQuotaFetchResult {
 
 const AUTHORIZED_EXTRA_IMAGE_MODEL_KEY = 'gemini-3-pro-image';
 const AUTHORIZED_EXTRA_IMAGE_MODEL_ID = 'MODEL_PLACEHOLDER_M9';
-type AutoGroupFamily = 'claude' | 'gemini_pro' | 'gemini_flash' | 'gemini_image';
+type AutoGroupFamily = 'gemini_argon' | 'claude' | 'gemini_pro' | 'gemini_flash' | 'gemini_image';
 
+const AUTO_GROUP_GEMINI_ARGON_ID_PATTERN = /^gemini-\d+(?:\.\d+)?-argon(?:-|$)/;
 const AUTO_GROUP_GEMINI_PRO_ID_PATTERN = /^gemini-\d+(?:\.\d+)?-pro-(high|low)(?:-|$)/;
 const AUTO_GROUP_GEMINI_FLASH_ID_PATTERN = /^gemini-\d+(?:\.\d+)?-flash(?:-|$)/;
 const AUTO_GROUP_GEMINI_IMAGE_ID_PATTERN = /^gemini-\d+(?:\.\d+)?-pro-image(?:-|$)/;
 
+const AUTO_GROUP_GEMINI_ARGON_LABEL_PATTERN = /^gemini \d+(?:\.\d+)? argon\b/;
 const AUTO_GROUP_GEMINI_PRO_LABEL_PATTERN = /^gemini \d+(?:\.\d+)? pro(?: \((high|low)\)| (high|low))\b/;
 const AUTO_GROUP_GEMINI_FLASH_LABEL_PATTERN = /^gemini \d+(?:\.\d+)? flash\b/;
 const AUTO_GROUP_GEMINI_IMAGE_LABEL_PATTERN = /^gemini \d+(?:\.\d+)? pro image\b/;
+
+const AUTO_GROUP_GEMINI_ARGON_ID_SET = new Set(
+    [
+        'MODEL_PLACEHOLDER_M417',
+        'MODEL_PLACEHOLDER_M418',
+        'MODEL_PLACEHOLDER_M419',
+    ].map(id => id.toLowerCase()),
+);
 
 const AUTO_GROUP_CLAUDE_ID_SET = new Set(
     [
@@ -93,6 +103,12 @@ const AUTO_GROUP_CLAUDE_ID_SET = new Set(
         'MODEL_PLACEHOLDER_M12',
         'MODEL_PLACEHOLDER_M26',
         'MODEL_PLACEHOLDER_M35',
+        'MODEL_PLACEHOLDER_M405',
+        'MODEL_PLACEHOLDER_M406',
+        'MODEL_PLACEHOLDER_M408',
+        'MODEL_PLACEHOLDER_M409',
+        'MODEL_PLACEHOLDER_M410',
+        'MODEL_PLACEHOLDER_M411',
         'MODEL_OPENAI_GPT_OSS_120B_MEDIUM',
     ].map(id => id.toLowerCase()),
 );
@@ -109,6 +125,9 @@ const AUTO_GROUP_GEMINI_PRO_ID_SET = new Set(
 const AUTO_GROUP_GEMINI_FLASH_ID_SET = new Set(
     [
         'MODEL_PLACEHOLDER_M18',
+        'MODEL_PLACEHOLDER_M414',
+        'MODEL_PLACEHOLDER_M415',
+        'MODEL_PLACEHOLDER_M416',
     ].map(id => id.toLowerCase()),
 );
 
@@ -119,13 +138,20 @@ const AUTO_GROUP_GEMINI_IMAGE_ID_SET = new Set(
 );
 
 const AUTO_GROUP_FAMILY_DISPLAY_NAMES: Record<AutoGroupFamily, string> = {
+    gemini_argon: 'Gemini 4 Argon',
     claude: 'Claude',
     gemini_pro: 'Gemini Pro',
     gemini_flash: 'Gemini Flash',
     gemini_image: 'Gemini Image',
 };
 
-const AUTO_GROUP_FAMILY_ORDER: AutoGroupFamily[] = ['claude', 'gemini_pro', 'gemini_flash', 'gemini_image'];
+const AUTO_GROUP_FAMILY_ORDER: AutoGroupFamily[] = [
+    'gemini_argon',
+    'claude',
+    'gemini_pro',
+    'gemini_flash',
+    'gemini_image',
+];
 
 function normalizeAutoGroupMatchText(value: string | undefined): string {
     return (value || '')
@@ -141,6 +167,14 @@ function resolveAutoGroupFamily(modelId: string, label?: string): AutoGroupFamil
         return null;
     }
     const normalizedLabel = normalizeAutoGroupMatchText(label || modelId);
+
+    if (
+        AUTO_GROUP_GEMINI_ARGON_ID_SET.has(normalizedId)
+        || AUTO_GROUP_GEMINI_ARGON_ID_PATTERN.test(normalizedId)
+        || AUTO_GROUP_GEMINI_ARGON_LABEL_PATTERN.test(normalizedLabel)
+    ) {
+        return 'gemini_argon';
+    }
 
     if (
         AUTO_GROUP_GEMINI_IMAGE_ID_SET.has(normalizedId)
@@ -199,6 +233,8 @@ export class ReactorCore {
     private lastSnapshotSource?: 'local' | 'authorized';
     /** 上一次的原始 API 响应缓存（用于 reprocess 时重新生成分组） */
     private lastRawResponse?: ServerUserStatusResponse;
+    /** 最近一次从本地进程获取的模型配额列表（用于补充云端接口未返回的模型如 Gemini 4 Argon） */
+    private lastLocalModels?: ModelQuotaInfo[];
     /** 上一次的授权配额模型缓存（用于 reprocess 时重新生成分组） */
     private lastAuthorizedModels?: ModelQuotaInfo[];
     /** 最近一次成功获取到的授权 Credits（用于缓存重放时避免回退为 --） */
@@ -232,6 +268,14 @@ export class ReactorCore {
         this.token = token;
         this.lastScanDiagnostics = diagnostics;
         logger.info(`Reactor Engaged: :${port}`);
+    }
+
+    hasLocalConnection(): boolean {
+        return this.port > 0 && Boolean(this.token);
+    }
+
+    hasLocalModels(): boolean {
+        return Array.isArray(this.lastLocalModels) && this.lastLocalModels.length > 0;
     }
 
     /**
@@ -268,6 +312,9 @@ export class ReactorCore {
             return false;
         }
         try {
+            if (this.hasLocalConnection() && !this.hasLocalModels()) {
+                await this.tryFetchLocalTelemetry();
+            }
             const models = this.buildModelsFromAuthorizedResponse(record!.payload as AuthorizedQuotaResponse);
             if (models.length === 0) {
                 return false;
@@ -739,7 +786,7 @@ export class ReactorCore {
         return this.decodeSignal(raw);
     }
 
-    private async tryFetchLocalTelemetry(): Promise<QuotaSnapshot | null> {
+    public async tryFetchLocalTelemetry(): Promise<QuotaSnapshot | null> {
         if (!this.port || !this.token) {
             return null;
         }
@@ -969,7 +1016,7 @@ export class ReactorCore {
         }
 
         const familyGroupMap: Partial<Record<AutoGroupFamily, string>> = {};
-        for (const family of ['claude', 'gemini_pro', 'gemini_flash', 'gemini_image'] as AutoGroupFamily[]) {
+        for (const family of AUTO_GROUP_FAMILY_ORDER) {
             const groupCounter = familyStats.get(family);
             if (!groupCounter || groupCounter.size === 0) {
                 continue;
@@ -1105,6 +1152,9 @@ export class ReactorCore {
 
         if (email && !forceRefresh && isApiCacheValid(previousCache)) {
             try {
+                if (this.hasLocalConnection() && !this.hasLocalModels()) {
+                    await this.tryFetchLocalTelemetry();
+                }
                 return {
                     models: this.buildModelsFromAuthorizedResponse(previousCache!.payload as AuthorizedQuotaResponse),
                     fromApiCacheFile: true,
@@ -1112,6 +1162,10 @@ export class ReactorCore {
             } catch (error) {
                 logger.warn(`[QuotaApiCache] Cached response decode failed: ${error instanceof Error ? error.message : String(error)}`);
             }
+        }
+
+        if (this.hasLocalConnection()) {
+            await this.tryFetchLocalTelemetry();
         }
 
         logger.info('[AuthorizedQuota] Fetching available models');
@@ -1211,6 +1265,14 @@ export class ReactorCore {
                 tagTitle: info.tagTitle,
                 supportedMimeTypes: info.supportedMimeTypes,
             });
+        }
+
+        if (this.lastLocalModels && this.lastLocalModels.length > 0) {
+            const existingIds = new Set(models.map(m => m.modelId));
+            const extraLocalModels = this.lastLocalModels.filter(m => !existingIds.has(m.modelId));
+            if (extraLocalModels.length > 0) {
+                models.unshift(...extraLocalModels);
+            }
         }
 
         this.logModelList('authorized', models);
@@ -1566,6 +1628,7 @@ export class ReactorCore {
             return a.label.localeCompare(b.label);
         });
 
+        this.lastLocalModels = models;
         this.logModelList('local', models);
         return this.buildSnapshot(models, promptCredits, userInfo);
     }
@@ -1605,7 +1668,35 @@ export class ReactorCore {
         const config = configService.getConfig();
         const allModels = [...models];
 
-        const visibleModels = config.visibleModels ?? [];
+        let visibleModels = config.visibleModels ?? [];
+        if (visibleModels.length > 0 && this.lastLocalModels && this.lastLocalModels.length > 0) {
+            const autoAddedKey = 'autoAddedLocalVisibleModels';
+            const autoAdded = new Set(configService.getStateValue<string[]>(autoAddedKey, []) ?? []);
+            const visibleSet = new Set(visibleModels);
+            let updatedVisible = false;
+            const nextVisible = [...visibleModels];
+            const nextAutoAdded = new Set(autoAdded);
+            for (const localModel of this.lastLocalModels) {
+                if (
+                    AUTO_GROUP_GEMINI_ARGON_ID_SET.has(localModel.modelId.toLowerCase())
+                    && !autoAdded.has(localModel.modelId)
+                ) {
+                    nextAutoAdded.add(localModel.modelId);
+                    if (!visibleSet.has(localModel.modelId)) {
+                        nextVisible.push(localModel.modelId);
+                        visibleSet.add(localModel.modelId);
+                        updatedVisible = true;
+                    }
+                }
+            }
+            if (nextAutoAdded.size !== autoAdded.size) {
+                void configService.setStateValue(autoAddedKey, Array.from(nextAutoAdded));
+            }
+            if (updatedVisible) {
+                visibleModels = nextVisible;
+                void configService.updateVisibleModels(nextVisible);
+            }
+        }
         if (visibleModels.length > 0) {
             const visibleSet = new Set(visibleModels);
             const filteredModels = models.filter(model => visibleSet.has(model.modelId));
@@ -1627,10 +1718,21 @@ export class ReactorCore {
         
         if (config.groupingEnabled) {
             const groupMap = new Map<string, ModelQuotaInfo[]>();
-            const savedMappings = config.groupMappings;
+            const savedMappings = { ...config.groupMappings };
             const hasSavedMappings = Object.keys(savedMappings).length > 0;
             
             if (hasSavedMappings) {
+                const argonModels = models.filter(
+                    m => resolveAutoGroupFamily(m.modelId, m.label) === 'gemini_argon',
+                );
+                const unmappedArgon = argonModels.filter(m => !savedMappings[m.modelId]);
+                if (unmappedArgon.length > 0) {
+                    const argonGroupId = argonModels.map(m => m.modelId).sort().join('_');
+                    for (const m of unmappedArgon) {
+                        savedMappings[m.modelId] = argonGroupId;
+                    }
+                    void configService.updateGroupMappings(savedMappings);
+                }
                 // 使用存储的分组映射
                 for (const model of models) {
                     const groupId = savedMappings[model.modelId];

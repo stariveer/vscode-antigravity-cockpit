@@ -1,4 +1,16 @@
 export const AUTH_RECOMMENDED_LABELS = [
+    'Gemini 4 Argon (High)',
+    'Gemini 4 Argon (Medium)',
+    'Gemini 4 Argon (Low)',
+    'Gemini 3.8 Flash (High)',
+    'Gemini 3.8 Flash (Medium)',
+    'Gemini 3.8 Flash (Low)',
+    'Claude Opus 5.5 (High)',
+    'Claude Opus 5.5 (Medium)',
+    'Claude Opus 5.5 (Low)',
+    'Claude Sonnet 5.5 (High)',
+    'Claude Sonnet 5.5 (Medium)',
+    'Claude Sonnet 5.5 (Low)',
     'Gemini 3.1 Pro (High)',
     'Gemini 3.1 Pro (Low)',
     'Gemini 3 Flash',
@@ -9,6 +21,18 @@ export const AUTH_RECOMMENDED_LABELS = [
 ];
 
 export const AUTH_RECOMMENDED_MODEL_IDS = [
+    'MODEL_PLACEHOLDER_M417', // Gemini 4 Argon (High)
+    'MODEL_PLACEHOLDER_M418', // Gemini 4 Argon (Medium)
+    'MODEL_PLACEHOLDER_M419', // Gemini 4 Argon (Low)
+    'MODEL_PLACEHOLDER_M414', // Gemini 3.8 Flash (High)
+    'MODEL_PLACEHOLDER_M415', // Gemini 3.8 Flash (Medium)
+    'MODEL_PLACEHOLDER_M416', // Gemini 3.8 Flash (Low)
+    'MODEL_PLACEHOLDER_M408', // Claude Opus 5.5 (High)
+    'MODEL_PLACEHOLDER_M406', // Claude Opus 5.5 (Medium)
+    'MODEL_PLACEHOLDER_M405', // Claude Opus 5.5 (Low)
+    'MODEL_PLACEHOLDER_M411', // Claude Sonnet 5.5 (High)
+    'MODEL_PLACEHOLDER_M410', // Claude Sonnet 5.5 (Medium)
+    'MODEL_PLACEHOLDER_M409', // Claude Sonnet 5.5 (Low)
     'MODEL_PLACEHOLDER_M37', // Gemini 3.1 Pro (High)
     'MODEL_PLACEHOLDER_M36', // Gemini 3.1 Pro (Low)
     'MODEL_PLACEHOLDER_M18', // Gemini 3 Flash
