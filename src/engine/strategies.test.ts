@@ -60,5 +60,15 @@ describe('Process Detection Strategies', () => {
             const cmd = '/path/to/language_server --extension_server_port 53125 --csrf_token abc-123 --app_data_dir=wrong';
             expect(isAntigravityProcess(cmd)).toBe(false);
         });
+
+        it('should prioritize active non-orphan processes and newer PIDs over orphan processes (ppid=1)', () => {
+            const stdout = [
+                '11797     1 /Users/test/.gemini/bin/agy --hub --hub-port=50306 --app_data_dir=antigravity --csrf_token=token-old-orphan',
+                '82598 82449 /Users/test/.gemini/bin/agy --hub --hub-port=56870 --app_data_dir=antigravity --csrf_token=token-active-1',
+                '82910 82795 /Users/test/.gemini/bin/agy --hub --hub-port=57203 --app_data_dir=antigravity --csrf_token=token-active-2',
+            ].join('\n');
+            const parsed = strategy.parseProcessInfo(stdout);
+            expect(parsed.map(p => p.pid)).toEqual([82910, 82598, 11797]);
+        });
     });
 });

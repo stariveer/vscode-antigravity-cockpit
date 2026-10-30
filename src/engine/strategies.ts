@@ -113,7 +113,7 @@ export class WindowsStrategy implements PlatformStrategy {
                 return [];
             }
 
-            return candidates;
+            return candidates.sort((a, b) => b.pid - a.pid);
         } catch (e) {
             const error = e instanceof Error ? e : new Error(String(e));
             // Log stdout preview for diagnosis
@@ -280,12 +280,14 @@ export class UnixStrategy implements PlatformStrategy {
             return [];
         }
 
-        // Unix 平台排序策略：当前进程的子进程 > 其他进程
-        // 为了提高成功率，我们将子进程排在第一位，但返回所有候选进程
+        // Unix 平台排序策略：当前进程的子进程 > 非孤儿活跃进程 (ppid > 1) > 孤儿进程 (ppid <= 1)，同级按最新 PID 降序
         return candidates.sort((a, b) => {
-            if (a.ppid === currentPid) { return -1; }
-            if (b.ppid === currentPid) { return 1; }
-            return 0;
+            if (a.ppid === currentPid && b.ppid !== currentPid) { return -1; }
+            if (b.ppid === currentPid && a.ppid !== currentPid) { return 1; }
+            const aOrphan = a.ppid <= 1 ? 1 : 0;
+            const bOrphan = b.ppid <= 1 ? 1 : 0;
+            if (aOrphan !== bOrphan) { return aOrphan - bOrphan; }
+            return b.pid - a.pid;
         });
     }
 

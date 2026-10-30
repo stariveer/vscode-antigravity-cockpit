@@ -189,9 +189,9 @@ import { createAnnouncementModule } from './dashboard_announcements';
             /^gemini-\d+(?:\.\d+)?-flash(?:-|$)/.test(modelIdLower)
             || /^gemini \d+(?:\.\d+)? flash\b/.test(labelText)
             || modelIdLower === 'model_placeholder_m18'
-            || modelIdLower === 'model_placeholder_m414'
-            || modelIdLower === 'model_placeholder_m415'
-            || modelIdLower === 'model_placeholder_m416'
+            || modelIdLower === 'model_placeholder_m318'
+            || modelIdLower === 'model_placeholder_m319'
+            || modelIdLower === 'model_placeholder_m320'
         ) {
             return 'gemini_flash';
         }
@@ -203,12 +203,12 @@ import { createAnnouncementModule } from './dashboard_announcements';
             || modelIdLower === 'model_placeholder_m12'
             || modelIdLower === 'model_placeholder_m26'
             || modelIdLower === 'model_placeholder_m35'
+            || modelIdLower === 'model_placeholder_m400'
+            || modelIdLower === 'model_placeholder_m401'
+            || modelIdLower === 'model_placeholder_m402'
+            || modelIdLower === 'model_placeholder_m403'
+            || modelIdLower === 'model_placeholder_m404'
             || modelIdLower === 'model_placeholder_m405'
-            || modelIdLower === 'model_placeholder_m406'
-            || modelIdLower === 'model_placeholder_m408'
-            || modelIdLower === 'model_placeholder_m409'
-            || modelIdLower === 'model_placeholder_m410'
-            || modelIdLower === 'model_placeholder_m411'
             || modelIdLower === 'model_openai_gpt_oss_120b_medium'
         ) {
             return 'claude';

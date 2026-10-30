@@ -517,6 +517,14 @@ async function bootSystems(): Promise<void> {
     }
 
     const quotaSource = configService.getConfig().quotaSource;
+    reactor.setLocalRescanHandler(async () => {
+        const info = await hunter.scanEnvironment(1);
+        if (info) {
+            reactor.engage(info.connectPort, info.csrfToken, hunter.getLastDiagnostics());
+            return true;
+        }
+        return false;
+    });
     if (quotaSource === 'authorized') {
         logger.info('Authorized quota source active, starting reactor with background local scan');
         reactor.startReactor(configService.getRefreshIntervalMs());

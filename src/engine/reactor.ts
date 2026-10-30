@@ -103,12 +103,12 @@ const AUTO_GROUP_CLAUDE_ID_SET = new Set(
         'MODEL_PLACEHOLDER_M12',
         'MODEL_PLACEHOLDER_M26',
         'MODEL_PLACEHOLDER_M35',
+        'MODEL_PLACEHOLDER_M400',
+        'MODEL_PLACEHOLDER_M401',
+        'MODEL_PLACEHOLDER_M402',
+        'MODEL_PLACEHOLDER_M403',
+        'MODEL_PLACEHOLDER_M404',
         'MODEL_PLACEHOLDER_M405',
-        'MODEL_PLACEHOLDER_M406',
-        'MODEL_PLACEHOLDER_M408',
-        'MODEL_PLACEHOLDER_M409',
-        'MODEL_PLACEHOLDER_M410',
-        'MODEL_PLACEHOLDER_M411',
         'MODEL_OPENAI_GPT_OSS_120B_MEDIUM',
     ].map(id => id.toLowerCase()),
 );
@@ -125,9 +125,9 @@ const AUTO_GROUP_GEMINI_PRO_ID_SET = new Set(
 const AUTO_GROUP_GEMINI_FLASH_ID_SET = new Set(
     [
         'MODEL_PLACEHOLDER_M18',
-        'MODEL_PLACEHOLDER_M414',
-        'MODEL_PLACEHOLDER_M415',
-        'MODEL_PLACEHOLDER_M416',
+        'MODEL_PLACEHOLDER_M318',
+        'MODEL_PLACEHOLDER_M319',
+        'MODEL_PLACEHOLDER_M320',
     ].map(id => id.toLowerCase()),
 );
 
@@ -235,6 +235,12 @@ export class ReactorCore {
     private lastRawResponse?: ServerUserStatusResponse;
     /** 最近一次从本地进程获取的模型配额列表（用于补充云端接口未返回的模型如 Gemini 4 Argon） */
     private lastLocalModels?: ModelQuotaInfo[];
+    /** 最近一次从本地进程获取的账户邮箱 */
+    private lastLocalEmail?: string;
+    /** 最近一次扫描本地进程连接的时间戳 */
+    private lastLocalRescanAt: number = 0;
+    /** 本地进程重扫描回调（用于账号切换或进程重启后重连新端口） */
+    private localRescanHandler?: () => Promise<boolean>;
     /** 上一次的授权配额模型缓存（用于 reprocess 时重新生成分组） */
     private lastAuthorizedModels?: ModelQuotaInfo[];
     /** 最近一次成功获取到的授权 Credits（用于缓存重放时避免回退为 --） */
@@ -278,6 +284,41 @@ export class ReactorCore {
         return Array.isArray(this.lastLocalModels) && this.lastLocalModels.length > 0;
     }
 
+    setLocalRescanHandler(handler: () => Promise<boolean>): void {
+        this.localRescanHandler = handler;
+    }
+
+    public async ensureLocalTelemetryForEmail(targetEmail?: string | null): Promise<void> {
+        const now = Date.now();
+        if (this.localRescanHandler && (!this.hasLocalConnection() || now - this.lastLocalRescanAt > 15000)) {
+            this.lastLocalRescanAt = now;
+            await this.localRescanHandler();
+        }
+        if (this.hasLocalConnection()) {
+            const snap = await this.tryFetchLocalTelemetry();
+            if (!snap && this.localRescanHandler) {
+                this.lastLocalRescanAt = Date.now();
+                const rescanned = await this.localRescanHandler();
+                if (rescanned) {
+                    await this.tryFetchLocalTelemetry();
+                }
+            }
+        }
+        if (
+            targetEmail
+            && this.lastLocalEmail
+            && this.normalizeAccount(this.lastLocalEmail) !== this.normalizeAccount(targetEmail)
+            && this.localRescanHandler
+        ) {
+            logger.info(`[LocalQuota] Local process email (${this.lastLocalEmail}) differs from target (${targetEmail}), rescanning...`);
+            this.lastLocalRescanAt = Date.now();
+            const rescanned = await this.localRescanHandler();
+            if (rescanned) {
+                await this.tryFetchLocalTelemetry();
+            }
+        }
+    }
+
     /**
      * 获取最新的配额快照
      */
@@ -312,10 +353,8 @@ export class ReactorCore {
             return false;
         }
         try {
-            if (this.hasLocalConnection() && !this.hasLocalModels()) {
-                await this.tryFetchLocalTelemetry();
-            }
-            const models = this.buildModelsFromAuthorizedResponse(record!.payload as AuthorizedQuotaResponse);
+            await this.ensureLocalTelemetryForEmail(email);
+            const models = this.buildModelsFromAuthorizedResponse(record!.payload as AuthorizedQuotaResponse, email);
             if (models.length === 0) {
                 return false;
             }
@@ -767,7 +806,23 @@ export class ReactorCore {
         logger.info('[LocalQuota] Using local process API');
         this.localUsingRemoteApi = false;
         this.localAccountEmail = undefined;
-        return await this.fetchLocalTelemetry();
+        const now = Date.now();
+        if (this.localRescanHandler && (!this.hasLocalConnection() || now - this.lastLocalRescanAt > 15000)) {
+            this.lastLocalRescanAt = now;
+            await this.localRescanHandler();
+        }
+        try {
+            return await this.fetchLocalTelemetry();
+        } catch (error) {
+            if (this.localRescanHandler) {
+                this.lastLocalRescanAt = Date.now();
+                const rescanned = await this.localRescanHandler();
+                if (rescanned) {
+                    return await this.fetchLocalTelemetry();
+                }
+            }
+            throw error;
+        }
     }
 
     private async fetchLocalTelemetry(): Promise<QuotaSnapshot> {
@@ -963,7 +1018,10 @@ export class ReactorCore {
                 : this.getCachedAuthorizedAvailableAICredits(),
         );
         const localSnapshot = await this.tryFetchLocalTelemetry();
-        if (localSnapshot?.promptCredits || localSnapshot?.userInfo) {
+        const isLocalAccountMatched = !activeAccount
+            || !localSnapshot?.userInfo?.email
+            || this.normalizeAccount(localSnapshot.userInfo.email) === this.normalizeAccount(activeAccount);
+        if (isLocalAccountMatched && (localSnapshot?.promptCredits || localSnapshot?.userInfo)) {
             snapshot.promptCredits = localSnapshot.promptCredits;
             snapshot.userInfo = localSnapshot.userInfo;
         }
@@ -1152,11 +1210,9 @@ export class ReactorCore {
 
         if (email && !forceRefresh && isApiCacheValid(previousCache)) {
             try {
-                if (this.hasLocalConnection() && !this.hasLocalModels()) {
-                    await this.tryFetchLocalTelemetry();
-                }
+                await this.ensureLocalTelemetryForEmail(email);
                 return {
-                    models: this.buildModelsFromAuthorizedResponse(previousCache!.payload as AuthorizedQuotaResponse),
+                    models: this.buildModelsFromAuthorizedResponse(previousCache!.payload as AuthorizedQuotaResponse, email),
                     fromApiCacheFile: true,
                 };
             } catch (error) {
@@ -1164,9 +1220,7 @@ export class ReactorCore {
             }
         }
 
-        if (this.hasLocalConnection()) {
-            await this.tryFetchLocalTelemetry();
-        }
+        await this.ensureLocalTelemetryForEmail(email);
 
         logger.info('[AuthorizedQuota] Fetching available models');
         const data = await cloudCodeClient.fetchAvailableModels(
@@ -1178,7 +1232,7 @@ export class ReactorCore {
             },
         ) as AuthorizedQuotaResponse;
 
-        const models = this.buildModelsFromAuthorizedResponse(data);
+        const models = this.buildModelsFromAuthorizedResponse(data, email);
 
         if (email) {
             try {
@@ -1207,7 +1261,10 @@ export class ReactorCore {
         };
     }
 
-    private buildModelsFromAuthorizedResponse(data: AuthorizedQuotaResponse): ModelQuotaInfo[] {
+    private buildModelsFromAuthorizedResponse(
+        data: AuthorizedQuotaResponse,
+        targetEmail?: string | null,
+    ): ModelQuotaInfo[] {
         const models: ModelQuotaInfo[] = [];
         const now = Date.now();
 
@@ -1267,7 +1324,10 @@ export class ReactorCore {
             });
         }
 
-        if (this.lastLocalModels && this.lastLocalModels.length > 0) {
+        const isEmailMatched = !targetEmail
+            || !this.lastLocalEmail
+            || this.normalizeAccount(this.lastLocalEmail) === this.normalizeAccount(targetEmail);
+        if (isEmailMatched && this.lastLocalModels && this.lastLocalModels.length > 0) {
             const existingIds = new Set(models.map(m => m.modelId));
             const extraLocalModels = this.lastLocalModels.filter(m => !existingIds.has(m.modelId));
             if (extraLocalModels.length > 0) {
@@ -1629,6 +1689,7 @@ export class ReactorCore {
         });
 
         this.lastLocalModels = models;
+        this.lastLocalEmail = userInfo.email && userInfo.email !== 'N/A' ? userInfo.email : undefined;
         this.logModelList('local', models);
         return this.buildSnapshot(models, promptCredits, userInfo);
     }
@@ -1914,8 +1975,12 @@ export class ReactorCore {
         };
     }
 
-    public buildAuthorizedSnapshotFromResponse(data: unknown, updatedAt?: number): QuotaSnapshot {
-        const models = this.buildModelsFromAuthorizedResponse(data as AuthorizedQuotaResponse);
+    public buildAuthorizedSnapshotFromResponse(
+        data: unknown,
+        updatedAt?: number,
+        targetEmail?: string | null,
+    ): QuotaSnapshot {
+        const models = this.buildModelsFromAuthorizedResponse(data as AuthorizedQuotaResponse, targetEmail);
         const snapshot = this.buildSnapshot(
             models,
             undefined,
